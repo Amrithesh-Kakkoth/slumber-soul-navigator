@@ -14,7 +14,242 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      daily_checkins: {
+        Row: {
+          checkin_date: string
+          created_at: string | null
+          energy_level: number | null
+          id: string
+          notes: string | null
+          sleep_duration: number | null
+          sleep_quality: number | null
+          stress_level: number | null
+          time_to_fall_asleep: number | null
+          user_id: string
+        }
+        Insert: {
+          checkin_date: string
+          created_at?: string | null
+          energy_level?: number | null
+          id?: string
+          notes?: string | null
+          sleep_duration?: number | null
+          sleep_quality?: number | null
+          stress_level?: number | null
+          time_to_fall_asleep?: number | null
+          user_id: string
+        }
+        Update: {
+          checkin_date?: string
+          created_at?: string | null
+          energy_level?: number | null
+          id?: string
+          notes?: string | null
+          sleep_duration?: number | null
+          sleep_quality?: number | null
+          stress_level?: number | null
+          time_to_fall_asleep?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string | null
+          display_name: string | null
+          id: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          display_name?: string | null
+          id?: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          display_name?: string | null
+          id?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      questions: {
+        Row: {
+          category: string
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          options: Json
+          order_index: number | null
+          question_text: string
+        }
+        Insert: {
+          category: string
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          options: Json
+          order_index?: number | null
+          question_text: string
+        }
+        Update: {
+          category?: string
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          options?: Json
+          order_index?: number | null
+          question_text?: string
+        }
+        Relationships: []
+      }
+      sleep_patterns: {
+        Row: {
+          analysis_date: string
+          created_at: string | null
+          id: string
+          insights: string | null
+          pattern_data: Json
+          recommendations: Json | null
+          user_id: string
+        }
+        Insert: {
+          analysis_date: string
+          created_at?: string | null
+          id?: string
+          insights?: string | null
+          pattern_data: Json
+          recommendations?: Json | null
+          user_id: string
+        }
+        Update: {
+          analysis_date?: string
+          created_at?: string | null
+          id?: string
+          insights?: string | null
+          pattern_data?: Json
+          recommendations?: Json | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      suggestions: {
+        Row: {
+          created_at: string | null
+          description: string
+          id: string
+          is_completed: boolean | null
+          priority: number | null
+          suggestion_type: string
+          title: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          description: string
+          id?: string
+          is_completed?: boolean | null
+          priority?: number | null
+          suggestion_type: string
+          title: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          description?: string
+          id?: string
+          is_completed?: boolean | null
+          priority?: number | null
+          suggestion_type?: string
+          title?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      todos: {
+        Row: {
+          category: string | null
+          created_at: string | null
+          description: string | null
+          due_date: string | null
+          id: string
+          is_completed: boolean | null
+          title: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          category?: string | null
+          created_at?: string | null
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          is_completed?: boolean | null
+          title: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          category?: string | null
+          created_at?: string | null
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          is_completed?: boolean | null
+          title?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_responses: {
+        Row: {
+          answer: string
+          category: string
+          created_at: string | null
+          id: string
+          question_id: string | null
+          question_text: string
+          session_id: string
+          user_id: string
+        }
+        Insert: {
+          answer: string
+          category: string
+          created_at?: string | null
+          id?: string
+          question_id?: string | null
+          question_text: string
+          session_id: string
+          user_id: string
+        }
+        Update: {
+          answer?: string
+          category?: string
+          created_at?: string | null
+          id?: string
+          question_id?: string | null
+          question_text?: string
+          session_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_responses_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
