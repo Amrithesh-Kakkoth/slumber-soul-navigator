@@ -1,12 +1,151 @@
-import { useState } from 'react';
-import { Target, Clock, Moon, Lightbulb, CheckCircle, Plus } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Target, Clock, Moon, Lightbulb, CheckCircle, Plus, Sparkles, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+import type { User } from '@supabase/supabase-js';
 
 const Suggestions = () => {
+  const { toast } = useToast();
+  const [user, setUser] = useState<User | null>(null);
   const [completedTasks, setCompletedTasks] = useState<Set<string>>(new Set());
+  const [aiSuggestions, setAiSuggestions] = useState<any>({
+    immediate: [],
+    weekly: [],
+    longterm: []
+  });
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  useEffect(() => {
+    // Get current user and load existing suggestions
+    const initializeData = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+      
+      if (user) {
+        await loadExistingSuggestions(user.id);
+      }
+    };
+
+    initializeData();
+  }, []);
+
+  const loadExistingSuggestions = async (userId: string) => {
+    setIsLoadingSuggestions(true);
+    try {
+      const { data: suggestions, error } = await supabase
+        .from('suggestions')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('is_completed', false)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Group suggestions by type
+      const groupedSuggestions = {
+        immediate: suggestions?.filter(s => s.suggestion_type === 'immediate') || [],
+        weekly: suggestions?.filter(s => s.suggestion_type === 'weekly') || [],
+        longterm: suggestions?.filter(s => s.suggestion_type === 'longterm') || []
+      };
+
+      setAiSuggestions(groupedSuggestions);
+    } catch (error: any) {
+      console.error('Error loading suggestions:', error);
+      toast({
+        title: "Error loading suggestions",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingSuggestions(false);
+    }
+  };
+
+  const generateAISuggestions = async () => {
+    if (!user) {
+      toast({
+        title: "Authentication required",
+        description: "Please log in to generate suggestions.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsGenerating(true);
+    try {
+      // Get the current session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        throw new Error('No active session');
+      }
+
+      // Call the Node.js API instead of Supabase function
+      const response = await fetch('http://localhost:3001/generate-suggestions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to generate suggestions');
+      }
+
+      const result = await response.json();
+      
+      toast({
+        title: "AI suggestions generated!",
+        description: "Your personalized sleep recommendations are ready.",
+      });
+
+      // Reload suggestions from database
+      await loadExistingSuggestions(user.id);
+    } catch (error: any) {
+      console.error('Error generating suggestions:', error);
+      toast({
+        title: "Failed to generate suggestions",
+        description: error.message || "Please try again later.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const markSuggestionComplete = async (suggestionId: string) => {
+    try {
+      const { error } = await supabase
+        .from('suggestions')
+        .update({ is_completed: true, updated_at: new Date().toISOString() })
+        .eq('id', suggestionId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Great job!",
+        description: "Suggestion marked as completed.",
+      });
+
+      // Reload suggestions
+      if (user) {
+        await loadExistingSuggestions(user.id);
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
 
   const toggleTask = (taskId: string) => {
     setCompletedTasks(prev => {
@@ -77,12 +216,21 @@ const Suggestions = () => {
     { id: 'todo-5', task: 'Practice 10 minutes of meditation before bed', category: 'Relaxation' }
   ];
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'High': return 'bg-destructive';
-      case 'Medium': return 'bg-orange-500';
-      case 'Low': return 'bg-primary-glow';
-      default: return 'bg-muted';
+  const getPriorityColor = (priority: string | number) => {
+    if (typeof priority === 'number') {
+      switch (priority) {
+        case 1: return 'bg-destructive';
+        case 2: return 'bg-orange-500';
+        case 3: return 'bg-primary-glow';
+        default: return 'bg-muted';
+      }
+    } else {
+      switch (priority) {
+        case 'High': return 'bg-destructive';
+        case 'Medium': return 'bg-orange-500';
+        case 'Low': return 'bg-primary-glow';
+        default: return 'bg-muted';
+      }
     }
   };
 
@@ -96,6 +244,28 @@ const Suggestions = () => {
         <p className="text-muted-foreground max-w-md mx-auto">
           Personalized recommendations based on your sleep assessment and daily check-ins
         </p>
+        
+        {/* AI Suggestions Generation Button */}
+        <div className="flex justify-center gap-4">
+          <Button 
+            onClick={generateAISuggestions}
+            disabled={isGenerating || !user}
+            variant="sleep"
+            size="lg"
+          >
+            {isGenerating ? (
+              <>
+                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4 mr-2" />
+                Generate AI Suggestions
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
       <div className="max-w-4xl mx-auto">
@@ -106,131 +276,173 @@ const Suggestions = () => {
           </TabsList>
 
           <TabsContent value="suggestions" className="space-y-6">
-            {/* Immediate Actions */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <Clock className="w-5 h-5 text-destructive" />
-                <h2 className="text-xl font-semibold">Immediate Actions</h2>
-                <Badge variant="outline" className="text-destructive border-destructive">
-                  Start Today
-                </Badge>
+            {isLoadingSuggestions ? (
+              <div className="text-center py-8">
+                <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-muted-foreground" />
+                <p className="text-muted-foreground">Loading your personalized suggestions...</p>
               </div>
-              
-              <div className="grid gap-4">
-                {suggestions.immediate.map((suggestion) => (
-                  <Card key={suggestion.id} className="shadow-soft border-l-4 border-l-destructive">
-                    <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1">
-                          <CardTitle className="text-lg">{suggestion.title}</CardTitle>
-                          <div className="flex items-center gap-2">
-                            <Badge className={getPriorityColor(suggestion.priority)}>
-                              {suggestion.priority} Priority
-                            </Badge>
-                            <Badge variant="outline">{suggestion.timeframe}</Badge>
-                          </div>
-                        </div>
-                      </div>
-                      <CardDescription className="text-base">
-                        {suggestion.description}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="p-3 bg-muted/50 rounded-lg">
-                        <div className="flex items-start gap-2">
-                          <Lightbulb className="w-4 h-4 text-primary-glow mt-0.5 flex-shrink-0" />
-                          <p className="text-sm text-muted-foreground">{suggestion.reason}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
+            ) : (
+              <>
+                {/* Immediate Actions */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-destructive" />
+                    <h2 className="text-xl font-semibold">Immediate Actions</h2>
+                    <Badge variant="outline" className="text-destructive border-destructive">
+                      Start Today
+                    </Badge>
+                  </div>
+                  
+                  {aiSuggestions.immediate.length === 0 ? (
+                    <Card className="shadow-soft">
+                      <CardContent className="p-6 text-center">
+                        <Sparkles className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                        <p className="text-muted-foreground">
+                          No immediate suggestions yet. Click "Generate AI Suggestions" to get personalized recommendations!
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="grid gap-4">
+                      {aiSuggestions.immediate.map((suggestion: any) => (
+                        <Card key={suggestion.id} className="shadow-soft border-l-4 border-l-destructive">
+                          <CardHeader>
+                            <div className="flex items-start justify-between">
+                              <div className="space-y-1 flex-1">
+                                <CardTitle className="text-lg">{suggestion.title}</CardTitle>
+                                <div className="flex items-center gap-2">
+                                  <Badge className={getPriorityColor(suggestion.priority)}>
+                                    Priority {suggestion.priority}
+                                  </Badge>
+                                  <Badge variant="outline">AI Generated</Badge>
+                                </div>
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => markSuggestionComplete(suggestion.id)}
+                              >
+                                <CheckCircle className="w-4 h-4 mr-2" />
+                                Complete
+                              </Button>
+                            </div>
+                            <CardDescription className="text-base">
+                              {suggestion.description}
+                            </CardDescription>
+                          </CardHeader>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
-            {/* Weekly Goals */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <Target className="w-5 h-5 text-orange-500" />
-                <h2 className="text-xl font-semibold">Weekly Goals</h2>
-                <Badge variant="outline" className="text-orange-500 border-orange-500">
-                  This Week
-                </Badge>
-              </div>
-              
-              <div className="grid gap-4">
-                {suggestions.weekly.map((suggestion) => (
-                  <Card key={suggestion.id} className="shadow-soft border-l-4 border-l-orange-500">
-                    <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1">
-                          <CardTitle className="text-lg">{suggestion.title}</CardTitle>
-                          <div className="flex items-center gap-2">
-                            <Badge className={getPriorityColor(suggestion.priority)}>
-                              {suggestion.priority} Priority
-                            </Badge>
-                            <Badge variant="outline">{suggestion.timeframe}</Badge>
-                          </div>
-                        </div>
-                      </div>
-                      <CardDescription className="text-base">
-                        {suggestion.description}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="p-3 bg-muted/50 rounded-lg">
-                        <div className="flex items-start gap-2">
-                          <Lightbulb className="w-4 h-4 text-primary-glow mt-0.5 flex-shrink-0" />
-                          <p className="text-sm text-muted-foreground">{suggestion.reason}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
+                {/* Weekly Goals */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Target className="w-5 h-5 text-orange-500" />
+                    <h2 className="text-xl font-semibold">Weekly Goals</h2>
+                    <Badge variant="outline" className="text-orange-500 border-orange-500">
+                      This Week
+                    </Badge>
+                  </div>
+                  
+                  {aiSuggestions.weekly.length === 0 ? (
+                    <Card className="shadow-soft">
+                      <CardContent className="p-6 text-center">
+                        <Target className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                        <p className="text-muted-foreground">
+                          No weekly goals yet. Generate AI suggestions to get your personalized weekly plan!
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="grid gap-4">
+                      {aiSuggestions.weekly.map((suggestion: any) => (
+                        <Card key={suggestion.id} className="shadow-soft border-l-4 border-l-orange-500">
+                          <CardHeader>
+                            <div className="flex items-start justify-between">
+                              <div className="space-y-1 flex-1">
+                                <CardTitle className="text-lg">{suggestion.title}</CardTitle>
+                                <div className="flex items-center gap-2">
+                                  <Badge className={getPriorityColor(suggestion.priority)}>
+                                    Priority {suggestion.priority}
+                                  </Badge>
+                                  <Badge variant="outline">AI Generated</Badge>
+                                </div>
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => markSuggestionComplete(suggestion.id)}
+                              >
+                                <CheckCircle className="w-4 h-4 mr-2" />
+                                Complete
+                              </Button>
+                            </div>
+                            <CardDescription className="text-base">
+                              {suggestion.description}
+                            </CardDescription>
+                          </CardHeader>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
-            {/* Long-term Goals */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <Moon className="w-5 h-5 text-primary-glow" />
-                <h2 className="text-xl font-semibold">Long-term Goals</h2>
-                <Badge variant="outline" className="text-primary-glow border-primary-glow">
-                  Next Month
-                </Badge>
-              </div>
-              
-              <div className="grid gap-4">
-                {suggestions.longterm.map((suggestion) => (
-                  <Card key={suggestion.id} className="shadow-soft border-l-4 border-l-primary-glow">
-                    <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1">
-                          <CardTitle className="text-lg">{suggestion.title}</CardTitle>
-                          <div className="flex items-center gap-2">
-                            <Badge className={getPriorityColor(suggestion.priority)}>
-                              {suggestion.priority} Priority
-                            </Badge>
-                            <Badge variant="outline">{suggestion.timeframe}</Badge>
-                          </div>
-                        </div>
-                      </div>
-                      <CardDescription className="text-base">
-                        {suggestion.description}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="p-3 bg-muted/50 rounded-lg">
-                        <div className="flex items-start gap-2">
-                          <Lightbulb className="w-4 h-4 text-primary-glow mt-0.5 flex-shrink-0" />
-                          <p className="text-sm text-muted-foreground">{suggestion.reason}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
+                {/* Long-term Goals */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Moon className="w-5 h-5 text-primary-glow" />
+                    <h2 className="text-xl font-semibold">Long-term Goals</h2>
+                    <Badge variant="outline" className="text-primary-glow border-primary-glow">
+                      Next Month
+                    </Badge>
+                  </div>
+                  
+                  {aiSuggestions.longterm.length === 0 ? (
+                    <Card className="shadow-soft">
+                      <CardContent className="p-6 text-center">
+                        <Moon className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                        <p className="text-muted-foreground">
+                          No long-term goals yet. Generate AI suggestions to build your future sleep strategy!
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="grid gap-4">
+                      {aiSuggestions.longterm.map((suggestion: any) => (
+                        <Card key={suggestion.id} className="shadow-soft border-l-4 border-l-primary-glow">
+                          <CardHeader>
+                            <div className="flex items-start justify-between">
+                              <div className="space-y-1 flex-1">
+                                <CardTitle className="text-lg">{suggestion.title}</CardTitle>
+                                <div className="flex items-center gap-2">
+                                  <Badge className={getPriorityColor(suggestion.priority)}>
+                                    Priority {suggestion.priority}
+                                  </Badge>
+                                  <Badge variant="outline">AI Generated</Badge>
+                                </div>
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => markSuggestionComplete(suggestion.id)}
+                              >
+                                <CheckCircle className="w-4 h-4 mr-2" />
+                                Complete
+                              </Button>
+                            </div>
+                            <CardDescription className="text-base">
+                              {suggestion.description}
+                            </CardDescription>
+                          </CardHeader>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </TabsContent>
 
           <TabsContent value="todo" className="space-y-6">
